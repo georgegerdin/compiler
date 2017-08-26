@@ -10,12 +10,14 @@ enum PunctuationTypes : int {
     P_NIL = 0,
     P_LOGIC_EQUAL,
     P_LOGIC_AND,
+    P_RIGHT_ARROW,
     P_ASSIGN,
     P_PLUS,
     P_MINUS,
     P_MULTIPLY,
     P_DIVIDE,
     P_SEMICOLON,
+    P_DOT,
     P_COMMA,
     P_OPEN_PAREN,
     P_CLOSE_PAREN,
@@ -26,12 +28,14 @@ enum PunctuationTypes : int {
 Punctuation punctuations[] = {
     {"==", P_LOGIC_EQUAL},
     {"&&", P_LOGIC_AND},
+    {"->", P_RIGHT_ARROW},
     {"=", P_ASSIGN},
     {"+", P_PLUS},
     {"-", P_MINUS},
     {"*", P_MULTIPLY},
     {"/", P_DIVIDE},
     {";", P_SEMICOLON},
+    {".", P_DOT},
     {",", P_COMMA},
     {"(", P_OPEN_PAREN},
     {")", P_CLOSE_PAREN},
@@ -127,7 +131,7 @@ struct Token {
     int data_int() {
        auto my_visitor = boost::hana::overload_linearly(
                    [] (NumberToken& token) -> int {return token.data;},
-                   [] (auto& token) -> int {return 0;}
+                   [] (auto& ) -> int {return 0;}
                 );
        return boost::apply_visitor(my_visitor, data);
     }
@@ -228,9 +232,9 @@ bool Lexer::ReadWhitespace() {
                             in_comment = false;
                     }
                 }
-
             }
-            m_current++;
+            else
+                in_whitespace = false;
         }
         else if(*m_current == '\n') {
             m_line++;
@@ -341,7 +345,7 @@ boost::optional<Token> Lexer::ReadName() {
 
 boost::optional<Token> Lexer::ReadPunctuation() {
     boost::optional<Token> result = boost::none;
-
+    
     //Check against all punctuations, longest first
     bool match = false;
     for(int i = 0; punctuations[i].chars && !match; ++i) {
