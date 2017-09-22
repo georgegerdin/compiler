@@ -37,6 +37,50 @@ operator<<(std::basic_ostream<CharType, CharTrait>& out, Token const& ) {
     return out;
 }
 
+bool operator==(FileNode const& lhs, FileNode const& rhs) {
+    if(lhs.name == rhs.name)
+        return true;
+    return false;
+}
+
+bool operator==(ModuleNode const& lhs, ModuleNode const& rhs) {
+    if(lhs.name == rhs.name)
+        return true;
+    return false;
+}
+
+bool operator==(TypeNode const& lhs, TypeNode const& rhs) {
+    if(lhs.type == rhs.type)
+        return true;
+    return false;
+}
+
+bool operator==(FunctionNode const& lhs, FunctionNode const& rhs) {
+    if(lhs.name == rhs.name ||
+       lhs.return_type == rhs.return_type)
+        return true;
+    return false;
+}
+
+bool operator==(BlockNode const& lhs, BlockNode const& rhs) {
+    return true;
+}
+
+bool operator==(StatementNode const& lhs, StatementNode const& rhs) {
+    return true;
+}
+
+bool operator==(LetNode const& lhs, LetNode const& rhs) {
+    if(lhs.var_name == rhs.var_name ||
+       lhs.mut == rhs.mut)
+        return true;
+    return false;
+}
+
+bool operator==(ExprNode const& lhs, ExprNode const& rhs) {
+    return true;
+}
+
 TEST_CASE("Compiler", "[compiler]") {
     Lexer lex(buffer.c_str());
 
@@ -74,11 +118,96 @@ TEST_CASE("Compiler", "[compiler]") {
     }
 
     SECTION( "parsing" ) {
-        Parser parser(lex);
-        auto ast = parser.Parse();
-        boost::optional<int> i = 4;
-        REQUIRE(i);
-        REQUIRE(ast);
+        auto parsetest = [](auto str, std::vector<AstNode> nodes = std::vector<AstNode>{}) {
+            Lexer lex(str);
+            Parser parser(lex);
+            auto ast = parser.Parse();
+            REQUIRE(ast);
+
+            auto it = nodes.begin();
+            visit(*ast, [&](auto const& node) {
+                if(it == nodes.end())
+                    return;
+
+                auto result = boost::apply_visitor(boost::hana::overload_linearly(
+                    [&](decltype(node) const& check) -> bool {
+                        CHECK(node == check);
+                        return true;
+                    },
+                    [](auto const&) -> bool {
+                        return false;
+                    }
+                ), *it);
+                CHECK(result);
+                ++it;
+            });
+
+            return ast;
+        };
+
+        auto parsetest_print = [&](auto str, std::vector<AstNode> nodes = std::vector<AstNode>{}) {
+            auto ast = parsetest(str, nodes);
+            if(ast)
+                print_ast(*ast);
+        };
+
+        SECTION("general snippet") {
+            Parser parser(lex);
+            auto ast = parser.Parse();
+            REQUIRE(ast);
+            //print_ast(*ast);
+        }
+
+        SECTION("function") {
+            parsetest("fn main() -> int {}",
+                {
+                    FileNode{},
+                    ModuleNode{},
+                    FunctionNode{"main", TYPE_INT},
+                    BlockNode{}
+                }
+            );
+        }
+        SECTION("let statement") {
+            parsetest("fn main() -> void {"
+                      "  let a = 0;"
+                      "}",
+                {
+                    FileNode{},
+                    ModuleNode{},
+                    FunctionNode{"main", TYPE_VOID},
+                    BlockNode{},
+                    StatementNode{},
+                    LetNode{false, "a"},
+                    ExprNode{}
+                }
+            );
+        }
+        SECTION("let addition expression") {
+            parsetest("fn main() -> void {"
+                      "  let a = 2+3;"
+                      "}");
+        }
+        SECTION("let subtraction expression") {
+            parsetest("fn main() -> void {"
+                      "  let a = 2-3;"
+                      "}");
+        }
+        SECTION("let multiplication expression") {
+            parsetest("fn main() -> void {"
+                      "  let a = 2*3;"
+                      "}");
+        }
+        SECTION("let divide expression") {
+            parsetest("fn main() -> void {"
+                      "  let a = 2/3;"
+                      "}");
+        }
+        SECTION("let module expression") {
+            parsetest("fn main() -> void {"
+                      "  let a = 2%3;"
+                      "}");
+        }
     }
 }
 

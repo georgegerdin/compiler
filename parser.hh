@@ -33,6 +33,12 @@ struct NamedType {
     std::string name;
 };
 
+bool operator==(NamedType const& lhs, NamedType const& rhs) {
+    if(lhs.name == rhs.name)
+        return true;
+    return false;
+}
+
 typedef boost::variant< boost::recursive_wrapper<FileNode>,
                         boost::recursive_wrapper<ModuleNode>,
                         boost::recursive_wrapper<FunctionNode>,
@@ -59,13 +65,18 @@ typedef boost::variant< boost::recursive_wrapper<FileNode>,
 
 using std::vector;
 using std::map;
-struct FileNode { vector<ModuleNode> modules; };
+struct FileNode { std::string name; vector<ModuleNode> modules; };
 struct ModuleNode { boost::optional<std::string> name; vector<AstNode> functions; ModuleNode(std::string iname) : name(iname) {} ModuleNode() { } };
-struct TypeNode { boost::variant<SimpleType, NamedType> type; };
+struct TypeNode { boost::variant<SimpleType, NamedType> type;
+                  TypeNode() {}
+                  TypeNode(boost::variant<SimpleType, NamedType> itype) : type(itype) {}};
 struct BlockNode { vector<StatementNode> statements; };
 struct StatementNode { AstNode expr; };
 struct EmptyStatementNode { };
-struct FunctionNode { std::string name; TypeNode return_type; vector<ParameterNode> parameters; BlockNode func_body;};
+struct FunctionNode { std::string name; TypeNode return_type; vector<ParameterNode> parameters; BlockNode func_body;
+                      FunctionNode() {}
+                      FunctionNode(const char* iname, boost::variant<SimpleType, NamedType> itype)
+                        : name(iname), return_type(itype) {} };
 struct ExprNode { vector<AstNode> operations; };
 struct AddNode { AstNode node; };
 struct DecNode { AstNode node; };
@@ -227,13 +238,13 @@ boost::optional<AstNode> Parser::ParseTerm() {
     }
     
     node.operations.push_back(first_factor.get());
-    //std::cout << "Eat div or mul \n";
+
     bool in_term = true;
     //Loop until there are no more multiply or divide operations
     for(auto next_token = m_lexer.PeekToken();
         next_token && in_term;
         next_token = m_lexer.PeekToken()) {
-            //std::cout << next_token->data_str() << "\n";
+
             auto type = next_token->subtype();
             if(type == P_MULTIPLY) {
                 m_lexer.ReadToken(); //Eat the multiply sign
@@ -249,7 +260,6 @@ boost::optional<AstNode> Parser::ParseTerm() {
                 node.operations.push_back(AstNode{mulop});
             }
             else if(type == P_DIVIDE) {
-                //std::cout << "div\n";
                 m_lexer.ReadToken(); //Eat the divide sign
                 auto factor = ParseFactor(); //Read the factor after the '+'
                 if(!factor) {
@@ -327,7 +337,6 @@ boost::optional<AstNode> Parser::ParseNumber() {
 
     NumberNode node;
     node.value = token->data_int();
-    //std::cout << "Parsed number: " << node.value << "\n";
     return AstNode{node};
 }
 
@@ -424,8 +433,6 @@ boost::optional<AstNode> Parser::ParseStatementBlock() {
     bool in_block = true;
     while(in_block) {
         auto next_token = m_lexer.PeekToken();
-
-        std::cout << "Next statement start with: " << next_token->data_str() << "\n";
         
         if(!next_token) {
             Error("Parse error, unexpectedly reached end of file in code block");
@@ -440,7 +447,6 @@ boost::optional<AstNode> Parser::ParseStatementBlock() {
         else {
             auto statement = ParseStatement();
             if(!statement) {
-                Error("Parse error, expected statement");
                 return boost::none;
             }
 
@@ -461,7 +467,6 @@ boost::optional<AstNode> Parser::ParseStatementBlock() {
 boost::optional<TypeNode> Parser::ParseType() {
     auto type = m_lexer.ReadToken();
     if(!type || type->type() != T_NAME) {
-        std::cout << type->data_str();
         Error("Parse error, expected type");
         return boost::none;
     }
@@ -486,7 +491,7 @@ boost::optional<TypeNode> Parser::ParseType() {
 
 boost::optional<vector<ParameterNode>> Parser::ParseParameters() {
     vector<ParameterNode> params;
-    std::cout << "Parse params\n";
+
     bool in_parameter_list = true;
     while(in_parameter_list) {
         auto next_token = m_lexer.PeekToken();
@@ -517,7 +522,6 @@ boost::optional<vector<ParameterNode>> Parser::ParseParameters() {
             if(next_token->type() == T_NAME) {
                 auto name = m_lexer.ReadToken();
                 if(!name || name->type() != T_NAME) {
-                    std::cout << name->data_str()<< "\n";
                     Error("Parse error, expected name of parameter");
                     return boost::none;
                 }
@@ -536,7 +540,6 @@ boost::optional<vector<ParameterNode>> Parser::ParseParameters() {
                 if(next_token->subtype() == P_CLOSE_PAREN)
                     in_parameter_list = false;
                 else {
-                    std::cout << next_token->data_str()<< "\n";
                     Error("Parse error, invalid token in parameter list");
                     return boost::none;
                 }
@@ -610,7 +613,6 @@ boost::optional<AstNode> Parser::ParseFunction() {
     //Read statement block
     auto block = ParseStatementBlock();
     if(!block) {
-        Error("Parse error, expected function body");
         return boost::none;
     }
 
@@ -643,30 +645,34 @@ boost::optional<AstNode> Parser::ParseFile(const char* ) {
             if(token->data_str() == "fn") {           //Parse a free function
                 auto function = ParseFunction();
 
-                if(function) {
-                    module.functions.push_back(function.get());
-                }
+                if(!function)
+                    return boost::none;
+
+                module.functions.push_back(function.get());
             }
             else if(token->data_str() == "module") { //Parse a module
                 auto ast_module = ParseModule();
 
-                if(ast_module) {
-                    auto m = boost::get<ModuleNode>(ast_module.get());
-                    for(auto const& it : file.modules) {
-                        if(it.name && m.name) {
-                            if (it.name.get() == m.name.get())
-                                Error("Parse error, module already exists");
-                        }
+                if(!ast_module)
+                    return boost::none;
+
+                auto m = boost::get<ModuleNode>(ast_module.get());
+                for(auto const& it : file.modules) {
+                    if(it.name && m.name) {
+                        if (it.name.get() == m.name.get())
+                            Error("Parse error, module already exists");
                     }
-                    file.modules.push_back(m);
                 }
+                file.modules.push_back(m);
             }
-            else
+            else {
                 Error("Parse error, expected function or module.");
+                return boost::none;
+            }
         }
         else {
             Error("Expected identifier");
-            break;
+            return boost::none;
         }
     }
 
@@ -840,5 +846,40 @@ void print_node(ParameterNode const& node, int ) {
 void print_ast(AstNode const& node) {
     boost::apply_visitor(print_node_visitor{0}, node);
 }
+
+
+template<typename T> void visit(FileNode const& node, T fn) {
+    fn(node);
+
+    for(auto const& m : node.modules)
+        visit(m, fn);
+}
+
+template<typename T> void visit(ModuleNode const& node, T fn) {
+    fn(node);
+
+    for(auto const& f : node.functions)
+        visit(f, fn);
+}
+
+template<typename T> void visit(FunctionNode const& node, T fn) {
+    fn(node);
+}
+
+
+template<typename Tnode, typename Tvisit>
+inline typename std::enable_if<!std::is_same<Tnode, AstNode>::value, void>::type
+visit(Tnode const& node, Tvisit) {
+    std::cout << "shouldnt be here " << typeid(node).name() << "\n";
+}
+
+template<typename Tnode, typename Tvisit>
+inline typename std::enable_if<std::is_same<Tnode, AstNode>::value, void>::type
+visit(Tnode const& node, Tvisit fn) {
+    boost::apply_visitor([&](auto const& n) {
+        visit(n, fn);
+    }, node);
+}
+
 
 #endif //__parser_h__
