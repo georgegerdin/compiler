@@ -1,12 +1,12 @@
 #ifndef __SYMBOLTABLE_HH__
 #define __SYMBOLTABLE_HH__
 
-using SymbolPath = vector<std::string>;
+using SymbolPath = std::vector<std::string>;
 
 class SymbolTable {
 public:
     SymbolTable(AstNode& root) : m_root_ast_node(root) {}
-    
+
     void Generate();
     void Generate(AstNode const& node, SymbolPath = SymbolPath {} );
     void Generate(FileNode const& fn, SymbolPath path);
@@ -21,32 +21,61 @@ public:
     void Generate(T const& tn) {
     }
     
-    enum SymbolType {
+    enum Category {
         Namespace,
         Module,
         Function,
         Variable
     };
-    
 
+    enum BuiltinType {
+        Int,
+        Uint,
+        Void
+    };
+
+    struct UserDefinedType {
+        std::string name;
+    };
+
+    using Type = boost::variant<BuiltinType, UserDefinedType>;
+    
     struct Entry {
         int line;
         int column;
-        SymbolType type;
+        Category category;
+        Type type;
         SymbolPath path;
     };
 
-    std::multimap<std::string, Entry> m_symbols;
+    boost::optional<std::vector<Entry*>> Lookup(const char* symbol);
+
+    using SymbolMap = std::multimap<std::string, Entry>;
+    SymbolMap m_symbols;
     AstNode& m_root_ast_node;
 };
+
+boost::optional<std::vector<SymbolTable::Entry*>> SymbolTable::Lookup(const char *symbol)
+{
+    auto symbols = m_symbols.find(symbol);
+    if(symbols == m_symbols.end())
+        return boost::none;
+
+    std::vector<Entry*> result;
+    while(symbols != m_symbols.end()) {
+        result.emplace_back(&symbols->second);
+        ++symbols;
+    }
+    return result;
+}
 
 void SymbolTable::Generate() {
     Generate(m_root_ast_node);
 }
 
-SymbolTable::Entry make_entry(SymbolTable::SymbolType symbol_type, SymbolPath symbol_path) {
+SymbolTable::Entry make_entry(SymbolTable::Category symbol_type, SymbolPath symbol_path) {
     SymbolTable::Entry entry;
-    entry.type = symbol_type;
+    entry.category = symbol_type;
     entry.path = symbol_path;
     return entry;
 }
@@ -59,7 +88,7 @@ void SymbolTable::Generate(FileNode const& fn, SymbolPath path) {
 
 void SymbolTable::Generate(ModuleNode const& mn, SymbolPath path) {
     if(mn.name) {
-        m_symbols.emplace(mn.name.get(), make_entry(SymbolType::Module, path));
+        m_symbols.emplace(mn.name.get(), make_entry(Category::Module, path));
         path.push_back(mn.name.get());
     }
     for(auto const& func : mn.functions) {
@@ -68,7 +97,7 @@ void SymbolTable::Generate(ModuleNode const& mn, SymbolPath path) {
 }
 
 void SymbolTable::Generate(FunctionNode const& fn, SymbolPath path) {
-     m_symbols.emplace(fn.name, make_entry(SymbolType::Function, path));
+     m_symbols.emplace(fn.name, make_entry(Category::Function, path));
      
     path.push_back(fn.name);
 
@@ -80,7 +109,7 @@ void SymbolTable::Generate(FunctionNode const& fn, SymbolPath path) {
 }
 
 void SymbolTable::Generate(ParameterNode const& pn, SymbolPath path) {
-    m_symbols.emplace(pn.name, make_entry(SymbolType::Variable, path));
+    m_symbols.emplace(pn.name, make_entry(Category::Variable, path));
 }
 
 void SymbolTable::Generate(BlockNode const& bn, SymbolPath path) {
@@ -94,7 +123,7 @@ void SymbolTable::Generate(StatementNode const& sn, SymbolPath path) {
 }
     
 void SymbolTable::Generate(LetNode const& ln, SymbolPath path) {
-    m_symbols.emplace(ln.var_name, make_entry(SymbolType::Variable, path));
+    m_symbols.emplace(ln.var_name, make_entry(Category::Variable, path));
 }
 
 void SymbolTable::Generate(AstNode const& node, SymbolPath path) {
@@ -109,14 +138,14 @@ void print_symbol_table(SymbolTable const& table) {
     std::cout << "SYMBOLS:\n";
     for(auto const& symbol : table.m_symbols) {
         std::cout << "\t" << symbol.first << "\t";
-        switch(symbol.second.type) {
-            case SymbolTable::SymbolType::Namespace:
+        switch(symbol.second.category) {
+            case SymbolTable::Category::Namespace:
                 std::cout << "namespace";break;
-            case SymbolTable::SymbolType::Module:
+            case SymbolTable::Category::Module:
                 std::cout << "module";break;
-            case SymbolTable::SymbolType::Function:
+            case SymbolTable::Category::Function:
                 std::cout << "function";break;
-            case SymbolTable::SymbolType::Variable:
+            case SymbolTable::Category::Variable:
                 std::cout << "variable";break;
         }
         std::cout << "\t"; 

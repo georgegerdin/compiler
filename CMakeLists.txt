@@ -4,4 +4,4 @@ project(compiler)
 
 add_compile_options(-std=c++1z)
 
-add_executable(gc main.cc lexer.hh parser.hh)
+add_executable(gc main.cc lexer.hh parser.hh symboltable.hh sema.hh)

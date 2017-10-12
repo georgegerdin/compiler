@@ -11,6 +11,7 @@
 #include "lexer.hh"
 #include "parser.hh"
 #include "symboltable.hh"
+#include "sema.hh"
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
@@ -34,6 +35,13 @@ template <class CharType, class CharTrait>
 std::basic_ostream<CharType, CharTrait>&
 operator<<(std::basic_ostream<CharType, CharTrait>& out, Token const& ) {
     out << "Token";
+    return out;
+}
+
+template <class CharType, class CharTrait>
+std::basic_ostream<CharType, CharTrait>&
+operator<<(std::basic_ostream<CharType, CharTrait>& out, std::vector<SymbolTable::Entry*> const& ) {
+    out << "Entries vector";
     return out;
 }
 
@@ -203,12 +211,54 @@ TEST_CASE("Compiler", "[compiler]") {
                       "  let a = 2/3;"
                       "}");
         }
-        SECTION("let module expression") {
-            parsetest("fn main() -> void {"
-                      "  let a = 2%3;"
-                      "}");
+    }
+    SECTION("symbol table") {
+        SECTION("general snippet") {
+            Parser parser(lex);
+            auto ast = parser.Parse().get();
+            SymbolTable sym(ast);
+            sym.Generate();
+            //print_symbol_table(sym);
+            REQUIRE(sym.Lookup("a"));
+            REQUIRE(sym.Lookup("b"));
+            REQUIRE(sym.Lookup("c"));
+            REQUIRE(sym.Lookup("func"));
+            REQUIRE(sym.Lookup("i"));
+            REQUIRE(sym.Lookup("main"));
         }
     }
+    SECTION("semantic analysis") {
+        SECTION("use local variable") {
+            Lexer lex("fn main() -> void {"
+                      "  let a = 2+3;"
+                      "  let b = a+2;"
+                      "}");
+            Parser parser(lex);
+            auto ast = parser.Parse().get();
+            SymbolTable sym(ast);
+            sym.Generate();
+            REQUIRE(sym.Lookup("main"));
+            REQUIRE(sym.Lookup("a"));
+            REQUIRE(sym.Lookup("b"));
+
+            Sema sa(ast, sym);
+            REQUIRE(sa.Analyse());
+        }
+        SECTION("reserved keyword") {
+            Lexer lex("fn main() -> void {"
+                      "  let int = 2+3;"
+                      "}");
+            Parser parser(lex);
+            auto ast = parser.Parse().get();
+            SymbolTable sym(ast);
+            sym.Generate();
+            REQUIRE(sym.Lookup("main"));
+
+            Sema sa(ast, sym);
+            REQUIRE(!sa.Analyse());
+        }
+    }
+
 }
 
 #if 0

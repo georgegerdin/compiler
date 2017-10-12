@@ -66,14 +66,17 @@ typedef boost::variant< boost::recursive_wrapper<FileNode>,
 using std::vector;
 using std::map;
 struct FileNode { std::string name; vector<ModuleNode> modules; };
-struct ModuleNode { boost::optional<std::string> name; vector<AstNode> functions; ModuleNode(std::string iname) : name(iname) {} ModuleNode() { } };
+struct ModuleNode { boost::optional<std::string> name; vector<AstNode> functions;
+                    ModuleNode(std::string iname) : name(iname) {} ModuleNode() { } };
 struct TypeNode { boost::variant<SimpleType, NamedType> type;
                   TypeNode() {}
                   TypeNode(boost::variant<SimpleType, NamedType> itype) : type(itype) {}};
 struct BlockNode { vector<StatementNode> statements; };
 struct StatementNode { AstNode expr; };
 struct EmptyStatementNode { };
-struct FunctionNode { std::string name; TypeNode return_type; vector<ParameterNode> parameters; BlockNode func_body;
+struct FunctionNode { std::string name; TypeNode return_type;
+                      vector<ParameterNode> parameters;
+                      BlockNode func_body;
                       FunctionNode() {}
                       FunctionNode(const char* iname, boost::variant<SimpleType, NamedType> itype)
                         : name(iname), return_type(itype) {} };
