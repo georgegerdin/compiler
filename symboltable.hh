@@ -16,17 +16,12 @@ public:
     void Generate(BlockNode const& bn, SymbolPath path);
     void Generate(StatementNode const& sn, SymbolPath path);
     void Generate(LetNode const& ln, SymbolPath path);
-    
+
     template <typename T>
-    void Generate(T const& tn) {
+    void Generate(T const&) {
     }
-    
-    enum Category {
-        Namespace,
-        Module,
-        Function,
-        Variable
-    };
+
+    struct Auto {};
 
     enum BuiltinType {
         Int,
@@ -38,17 +33,35 @@ public:
         std::string name;
     };
 
-    using Type = boost::variant<BuiltinType, UserDefinedType>;
-    
+    using Type = boost::variant<
+        Auto,
+        BuiltinType,
+        UserDefinedType>;
+
+    struct File {};
+    struct Namespace {};
+    struct Module {};
+    struct Function {Type type = Auto{};};
+    struct Variable {Type type = Auto{};};
+
+    using Category = boost::variant<
+        File,
+        Namespace,
+        Module,
+        Function,
+        Variable
+    >;
+
+
     struct Entry {
         int line;
         int column;
         Category category;
-        Type type;
         SymbolPath path;
     };
 
     boost::optional<std::vector<Entry*>> Lookup(const char* symbol);
+    boost::optional<std::vector<Entry*>> Lookup(const std::string& symbol);
 
     using SymbolMap = std::multimap<std::string, Entry>;
     SymbolMap m_symbols;
@@ -67,6 +80,10 @@ boost::optional<std::vector<SymbolTable::Entry*>> SymbolTable::Lookup(const char
         ++symbols;
     }
     return result;
+}
+
+boost::optional<std::vector<SymbolTable::Entry*>> SymbolTable::Lookup(const std::string& symbol) {
+    return Lookup(symbol.c_str());
 }
 
 void SymbolTable::Generate() {
@@ -88,7 +105,7 @@ void SymbolTable::Generate(FileNode const& fn, SymbolPath path) {
 
 void SymbolTable::Generate(ModuleNode const& mn, SymbolPath path) {
     if(mn.name) {
-        m_symbols.emplace(mn.name.get(), make_entry(Category::Module, path));
+        m_symbols.emplace(mn.name.get(), make_entry(Module{}, path));
         path.push_back(mn.name.get());
     }
     for(auto const& func : mn.functions) {
@@ -97,19 +114,19 @@ void SymbolTable::Generate(ModuleNode const& mn, SymbolPath path) {
 }
 
 void SymbolTable::Generate(FunctionNode const& fn, SymbolPath path) {
-     m_symbols.emplace(fn.name, make_entry(Category::Function, path));
-     
+     m_symbols.emplace(fn.name, make_entry(Function{}, path));
+
     path.push_back(fn.name);
 
     for(ParameterNode const& param : fn.parameters) {
         Generate(param, path);
     }
-     
+
     Generate(fn.func_body, path);
 }
 
 void SymbolTable::Generate(ParameterNode const& pn, SymbolPath path) {
-    m_symbols.emplace(pn.name, make_entry(Category::Variable, path));
+    m_symbols.emplace(pn.name, make_entry(Variable{}, path));
 }
 
 void SymbolTable::Generate(BlockNode const& bn, SymbolPath path) {
@@ -121,9 +138,9 @@ void SymbolTable::Generate(BlockNode const& bn, SymbolPath path) {
 void SymbolTable::Generate(StatementNode const& sn, SymbolPath path) {
     Generate(sn.expr, path);
 }
-    
+
 void SymbolTable::Generate(LetNode const& ln, SymbolPath path) {
-    m_symbols.emplace(ln.var_name, make_entry(Category::Variable, path));
+    m_symbols.emplace(ln.var_name, make_entry(Variable{}, path));
 }
 
 void SymbolTable::Generate(AstNode const& node, SymbolPath path) {
@@ -138,17 +155,23 @@ void print_symbol_table(SymbolTable const& table) {
     std::cout << "SYMBOLS:\n";
     for(auto const& symbol : table.m_symbols) {
         std::cout << "\t" << symbol.first << "\t";
-        switch(symbol.second.category) {
-            case SymbolTable::Category::Namespace:
-                std::cout << "namespace";break;
-            case SymbolTable::Category::Module:
-                std::cout << "module";break;
-            case SymbolTable::Category::Function:
-                std::cout << "function";break;
-            case SymbolTable::Category::Variable:
-                std::cout << "variable";break;
-        }
-        std::cout << "\t"; 
+        boost::apply_visitor(boost::hana::overload(
+            [](SymbolTable::File const&) {
+                std::cout << "file";
+            },
+            [](SymbolTable::Namespace const&) {
+                std::cout << "namespace";
+            },
+            [](SymbolTable::Module const&) {
+                std::cout << "module";
+            },
+            [](SymbolTable::Function const&) {
+                std::cout << "function";
+            },
+            [](SymbolTable::Variable const&) {
+                std::cout << "variable";
+            }), symbol.second.category);
+        std::cout << "\t";
         for(auto const& a : symbol.second.path) {
             std::cout << "::" << a;
         }

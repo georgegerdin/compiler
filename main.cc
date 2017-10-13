@@ -228,37 +228,36 @@ TEST_CASE("Compiler", "[compiler]") {
         }
     }
     SECTION("semantic analysis") {
-        SECTION("use local variable") {
-            Lexer lex("fn main() -> void {"
-                      "  let a = 2+3;"
-                      "  let b = a+2;"
-                      "}");
+        auto sematest = [](auto& str) {
+            Lexer lex(str);
             Parser parser(lex);
             auto ast = parser.Parse().get();
             SymbolTable sym(ast);
             sym.Generate();
-            REQUIRE(sym.Lookup("main"));
-            REQUIRE(sym.Lookup("a"));
-            REQUIRE(sym.Lookup("b"));
-
             Sema sa(ast, sym);
-            REQUIRE(sa.Analyse());
+            return sa.Analyse();
+        };
+
+        SECTION("use local variable") {
+            auto snippet =  "fn main() -> void {"
+                            "  let a = 2+3;"
+                            "  let b = a+2;"
+                            "}";
+            REQUIRE(sematest(snippet));
         }
         SECTION("reserved keyword") {
-            Lexer lex("fn main() -> void {"
-                      "  let int = 2+3;"
-                      "}");
-            Parser parser(lex);
-            auto ast = parser.Parse().get();
-            SymbolTable sym(ast);
-            sym.Generate();
-            REQUIRE(sym.Lookup("main"));
-
-            Sema sa(ast, sym);
-            REQUIRE(!sa.Analyse());
+            auto snippet = "fn main() -> void {"
+                            "  let int = 2+3;"
+                            "}";
+            REQUIRE(!sematest(snippet));
+        }
+        SECTION("invalid return type") {
+            auto snippet = "fn main() -> vpoid {"
+                           "  let a = 2+3;"
+                           "}";
+           REQUIRE(!sematest(snippet));
         }
     }
-
 }
 
 #if 0

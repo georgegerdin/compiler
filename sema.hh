@@ -11,6 +11,8 @@ const char* reserved[] = {
     "int"
 };
 
+using Result = boost::optional<SymbolTable::Category>;
+
 class Sema {
 public:
     Sema(AstNode& node, SymbolTable& sym) : m_ast(node), m_sym(sym) {}
@@ -18,21 +20,22 @@ public:
     bool Analyse();
 
 protected:
-    bool Analysis(AstNode const& node, SymbolPath path);
-    bool Analysis(FileNode const& node, SymbolPath path);
-    bool Analysis(ModuleNode const& node, SymbolPath path);
-    bool Analysis(FunctionNode const& node, SymbolPath path);
-    bool Analysis(BlockNode const& node, SymbolPath path);
-    bool Analysis(StatementNode const&, SymbolPath path);
-    bool Analysis(LetNode const&, SymbolPath path);
-
+    Result Analysis(AstNode const& node, SymbolPath path);
+    Result Analysis(FileNode const& node, SymbolPath path);
+    Result Analysis(ModuleNode const& node, SymbolPath path);
+    Result Analysis(FunctionNode const& node, SymbolPath path);
+    Result Analysis(BlockNode const& node, SymbolPath path);
+    Result Analysis(StatementNode const&, SymbolPath path);
+    Result Analysis(LetNode const&, SymbolPath path);
+    Result Analysis(TypeNode const&, SymbolPath path);
+    Result Analysis(NumberNode const& nn, SymbolPath);
     bool LegalSymbolName(const std::string& name);
 
     void Error(std::string error_str) { std::cout << error_str << std::endl; };
 
     template<typename T>
-    bool Analysis(T const&, SymbolPath) {
-        return true;
+    Result Analysis(T const&, SymbolPath) {
+        return SymbolTable::Category{SymbolTable::Variable{}};
     }
 
     AstNode& m_ast;
@@ -41,29 +44,29 @@ protected:
 
 bool Sema::Analyse()
 {
-    return Analysis(m_ast, SymbolPath{});
+    return Analysis(m_ast, SymbolPath{}) != boost::none;
 }
 
-bool Sema::Analysis(AstNode const& node, SymbolPath path)
+Result Sema::Analysis(AstNode const& node, SymbolPath path)
 {
     auto visitor = [&](auto const& n) {return Analysis(n, path);};
     return boost::apply_visitor(visitor, node);
 }
 
-bool Sema::Analysis(FileNode const& node, SymbolPath path)
+Result Sema::Analysis(FileNode const& node, SymbolPath path)
 {
-    bool result = true;
+    Result result = SymbolTable::Category{SymbolTable::File{}};
     for(const ModuleNode& m : node.modules) {
         if(!Analysis(m, path))
-            result = false;
+            result = boost::none;
     }
 
     return result;
 }
 
-bool Sema::Analysis(ModuleNode const& node, SymbolPath path)
+Result Sema::Analysis(ModuleNode const& node, SymbolPath path)
 {
-    bool result = true;
+    Result result = SymbolTable::Category{SymbolTable::Module{}};
 
     if(node.name) {
         path.emplace_back(node.name.get());
@@ -71,12 +74,12 @@ bool Sema::Analysis(ModuleNode const& node, SymbolPath path)
 
     for(const AstNode& fn : node.functions) {
         if(!Analysis(fn, path))
-            result = false;
+            result = boost::none;
     }
     return result;
 }
 
-bool Sema::Analysis(FunctionNode const& node, SymbolPath path)
+Result Sema::Analysis(FunctionNode const& node, SymbolPath path)
 {
     path.emplace_back(node.name);
 
@@ -84,37 +87,67 @@ bool Sema::Analysis(FunctionNode const& node, SymbolPath path)
         Analysis(param.type, path);
         if(!LegalSymbolName(param.name)) {
             Error("Semantic error, reserved keyword");
-            return false;
+            return boost::none;
         }
     }
 
-    if(!Analysis(node.return_type, path))
-        return false;
+    if(!Analysis(node.return_type, path)) {
+        Error("Semantic error, invalid function return type");
+        return boost::none;
+    }
     return Analysis(node.func_body, path);
 }
 
-bool Sema::Analysis(BlockNode const& node, SymbolPath path) {
+Result Sema::Analysis(BlockNode const& node, SymbolPath path) {
+    Result last_result = boost::none;
     for(auto const& s : node.statements) {
-        if(!Analysis(s, path))
-            return false;
+        last_result = Analysis(s, path);
+        if(!last_result)
+            return boost::none;
     }
-    return true;
+    return last_result;
 }
 
-bool Sema::Analysis(StatementNode const& node, SymbolPath path)
+Result Sema::Analysis(StatementNode const& node, SymbolPath path)
 {
     return Analysis(node.expr, path);
 }
 
-bool Sema::Analysis(LetNode const& node, SymbolPath path)
+Result Sema::Analysis(LetNode const& node, SymbolPath path)
 {
     if(!LegalSymbolName(node.var_name)) {
         Error("Semantic error, reserved keyword not allowed as variable name");
-        return false;
+        return boost::none;
     }
 
     return Analysis(node.rhs, path);
 }
+
+Result Sema::Analysis(TypeNode const& tn, SymbolPath path) {
+    return boost::apply_visitor(boost::hana::overload(
+        [](SimpleType const& st) -> Result {
+            return SymbolTable::Category{
+                    SymbolTable::Variable{SymbolTable::BuiltinType::Int}};
+        },
+        [this](NamedType const& nt) -> Result{
+            if(!m_sym.Lookup(nt.name)) {
+                Error("Semantic error, type not defined");
+                return boost::none;
+            }
+            return SymbolTable::Category{
+                SymbolTable::Variable{
+                    SymbolTable::UserDefinedType{nt.name}}};
+        }),
+        tn.type);
+}
+
+Result Sema::Analysis(NumberNode const& nn, SymbolPath) {
+    std::cout << "Number " << nn.value << "\n";
+    return SymbolTable::Category{
+        SymbolTable::Variable{SymbolTable::BuiltinType{
+                SymbolTable::BuiltinType::Int}}};
+}
+
 
 bool Sema::LegalSymbolName(std::string const& name)
 {
