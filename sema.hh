@@ -120,7 +120,31 @@ Result Sema::Analysis(LetNode const& node, SymbolPath path)
         return boost::none;
     }
 
-    return Analysis(node.rhs, path);
+    auto rhs_result = Analysis(node.rhs, path);
+
+    auto symbols = m_sym.Lookup(node.var_name);
+    if(!symbols) {
+        Error("Semantic error, variable not in the symbols table");
+        return boost::none;
+    }
+
+    auto sym_it = symbols->begin();
+    SymbolTable::Entry* sym_ptr = *sym_it;
+    SymbolTable::Variable* var;
+    if(!(var = boost::get<SymbolTable::Variable>(&sym_ptr->category))) {
+        Error("Semantic error, symbol not registered as variable");
+        return boost::none;
+    }
+
+    return boost::apply_visitor(boost::hana::overload(
+        [&](SymbolTable::Auto const& v) -> Result {
+            sym_ptr->category = rhs_result.get();
+            return rhs_result;
+        },
+        [](auto const&) -> Result {
+            Error("Semantic error, variable already has a type");
+            return boost::none;
+        }), var->type);
 }
 
 Result Sema::Analysis(TypeNode const& tn, SymbolPath path) {

@@ -9,17 +9,6 @@ public:
 
     void Generate();
     void Generate(AstNode const& node, SymbolPath = SymbolPath {} );
-    void Generate(FileNode const& fn, SymbolPath path);
-    void Generate(ModuleNode const& mn, SymbolPath path);
-    void Generate(FunctionNode const& fn, SymbolPath path);
-    void Generate(ParameterNode const& pn, SymbolPath path);
-    void Generate(BlockNode const& bn, SymbolPath path);
-    void Generate(StatementNode const& sn, SymbolPath path);
-    void Generate(LetNode const& ln, SymbolPath path);
-
-    template <typename T>
-    void Generate(T const&) {
-    }
 
     struct Auto {};
 
@@ -58,6 +47,7 @@ public:
         int column;
         Category category;
         SymbolPath path;
+        AstNode const* node_ptr = nullptr;
     };
 
     boost::optional<std::vector<Entry*>> Lookup(const char* symbol);
@@ -90,65 +80,59 @@ void SymbolTable::Generate() {
     Generate(m_root_ast_node);
 }
 
-SymbolTable::Entry make_entry(SymbolTable::Category symbol_type, SymbolPath symbol_path) {
+SymbolTable::Entry make_entry(SymbolTable::Category symbol_type, SymbolPath symbol_path, AstNode const* ptr = nullptr) {
     SymbolTable::Entry entry;
     entry.category = symbol_type;
     entry.path = symbol_path;
+    entry.node_ptr = ptr;
     return entry;
 }
 
-void SymbolTable::Generate(FileNode const& fn, SymbolPath path) {
-    for(auto const& module : fn.modules) {
-        Generate(module, path);
-    }
-}
-
-void SymbolTable::Generate(ModuleNode const& mn, SymbolPath path) {
-    if(mn.name) {
-        m_symbols.emplace(mn.name.get(), make_entry(Module{}, path));
-        path.push_back(mn.name.get());
-    }
-    for(auto const& func : mn.functions) {
-        Generate(func, path);
-    }
-}
-
-void SymbolTable::Generate(FunctionNode const& fn, SymbolPath path) {
-     m_symbols.emplace(fn.name, make_entry(Function{}, path));
-
-    path.push_back(fn.name);
-
-    for(ParameterNode const& param : fn.parameters) {
-        Generate(param, path);
-    }
-
-    Generate(fn.func_body, path);
-}
-
-void SymbolTable::Generate(ParameterNode const& pn, SymbolPath path) {
-    m_symbols.emplace(pn.name, make_entry(Variable{}, path));
-}
-
-void SymbolTable::Generate(BlockNode const& bn, SymbolPath path) {
-    for(auto const& statement : bn.statements) {
-        Generate(statement, path);
-    }
-}
-
-void SymbolTable::Generate(StatementNode const& sn, SymbolPath path) {
-    Generate(sn.expr, path);
-}
-
-void SymbolTable::Generate(LetNode const& ln, SymbolPath path) {
-    m_symbols.emplace(ln.var_name, make_entry(Variable{}, path));
-}
-
 void SymbolTable::Generate(AstNode const& node, SymbolPath path) {
-    boost::apply_visitor(
-        [this, &path](auto const& n) {
-            Generate(n, path);
+    auto gen_visitor = boost::hana::overload(
+        [&](LetNode const& ln) {
+            m_symbols.emplace(ln.var_name, make_entry(Variable{}, path, &node));
         },
-        node);
+        [&](StatementNode const& sn) {
+            Generate(sn.expr, path);
+        },
+        [&](BlockNode const& bn) {
+            for(auto const& statement : bn.statements) {
+                Generate(statement, path);
+            }
+        },
+        [&](ParameterNode const& pn) {
+            m_symbols.emplace(pn.name, make_entry(Variable{}, path, &node));
+        },
+        [&](FunctionNode const& fn) {
+            m_symbols.emplace(fn.name, make_entry(Function{}, path, &node));
+
+           path.push_back(fn.name);
+
+           for(ParameterNode const& param : fn.parameters) {
+               Generate(param, path);
+           }
+
+           Generate(fn.func_body, path);
+        },
+        [&](ModuleNode const & mn) {
+            if(mn.name) {
+                m_symbols.emplace(mn.name.get(), make_entry(Module{}, path, &node));
+                path.push_back(mn.name.get());
+            }
+            for(auto const& func : mn.functions) {
+                Generate(func, path);
+            }
+        },
+        [&](FileNode const& fn) {
+            for(auto const& module : fn.modules) {
+                Generate(module, path);
+            }
+        },
+        [&](auto const&) {}
+    );
+
+    boost::apply_visitor(gen_visitor, node);
 }
 
 void print_symbol_table(SymbolTable const& table) {
