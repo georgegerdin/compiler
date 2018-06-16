@@ -141,7 +141,7 @@ Result Sema::Analysis(LetNode const& node, SymbolPath path)
             sym_ptr->category = rhs_result.get();
             return rhs_result;
         },
-        [](auto const&) -> Result {
+        [this](auto const&) -> Result {
             Error("Semantic error, variable already has a type");
             return boost::none;
         }), var->type);
