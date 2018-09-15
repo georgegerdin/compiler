@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <type_traits>
 #include <boost/variant.hpp>
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
@@ -238,6 +239,26 @@ TEST_CASE("Compiler", "[compiler]") {
             return sa.Analyse();
         };
 
+		auto sematest_error = [](auto& str, auto const& error_type) -> bool {
+			Lexer lex(str);
+			Parser parser(lex);
+			auto ast = parser.Parse().get();
+			SymbolTable sym(ast);
+			sym.Generate();
+			Sema sa(ast, sym);
+			auto result = sa.Analyse();
+			if (result)
+				return false;
+			auto const &err = result.error();
+			return boost::apply_visitor(
+				[&error_type](auto const& e) {
+					if constexpr(std::is_same_v<decltype(e), decltype(error_type)>)
+						return true;
+					else
+						return false;
+				}, err);
+		};
+
         SECTION("use local variable") {
             auto snippet =  "fn main() -> void {"
                             "  let a = 2+3;"
@@ -245,17 +266,25 @@ TEST_CASE("Compiler", "[compiler]") {
                             "}";
             REQUIRE(sematest(snippet));
         }
+		SECTION("symbol undefined") {
+			auto snippet = "fn main() -> void {"
+				"  /*let a = 2+3;*/"
+				"  let b = a + 2;"
+				"}";
+			REQUIRE(sematest_error(snippet, UndefinedSymbol{"a"}));
+		}
+
         SECTION("reserved keyword") {
             auto snippet = "fn main() -> void {"
                             "  let int = 2+3;"
                             "}";
-            REQUIRE(!sematest(snippet));
+			REQUIRE(sematest_error(snippet, ReservedKeyword{ "int" }));
         }
         SECTION("invalid return type") {
             auto snippet = "fn main() -> vpoid {"
                            "  let a = 2+3;"
                            "}";
-           REQUIRE(!sematest(snippet));
+			REQUIRE(sematest_error(snippet, InvalidFunctionReturnType{ "vpoid" }));
         }
     }
 }

@@ -232,6 +232,7 @@ bool Lexer::ReadWhitespace() {
                             in_comment = false;
                     }
                 }
+				m_current++;
             }
             else
                 in_whitespace = false;
