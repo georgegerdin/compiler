@@ -39,6 +39,9 @@ protected:
     Result Analysis(LetNode const&, SymbolPath path);
     Result Analysis(TypeNode const&, SymbolPath path);
     Result Analysis(NumberNode const& nn, SymbolPath);
+	Result Analysis(ExprNode const&, SymbolPath path);
+	Result Analysis(IdentifierNode const&, SymbolPath path);
+
     bool LegalSymbolName(const std::string& name);
 
     template<typename T>
@@ -131,6 +134,9 @@ Result Sema::Analysis(LetNode const& node, SymbolPath path)
     }
 
     auto rhs_result = Analysis(node.rhs, path);
+	if (!rhs_result) {
+		return rhs_result;
+	}
 
     auto symbols = m_sym.Lookup(node.var_name);
     if(!symbols) {
@@ -178,6 +184,32 @@ Result Sema::Analysis(NumberNode const& nn, SymbolPath) {
                 SymbolTable::BuiltinType::Int}}};
 }
 
+
+Result Sema::Analysis(ExprNode const& en, SymbolPath path)
+{
+	Result result;
+	for (const auto& op : en.operations) {
+		result = Analysis(op, path);
+		if (!result)
+			return result;
+
+	}
+	return result;
+}
+
+Result Sema::Analysis(AddNode const& an, SymbolPath path) {
+
+}
+
+Result Sema::Analysis(IdentifierNode const& in, SymbolPath path)
+{
+	auto lookup = m_sym.Lookup(in.identifier);
+	if (!lookup)
+		return nonstd::make_unexpected(UndefinedSymbol{ in.identifier });
+
+	auto& result = *lookup;
+	return result[0]->category;
+}
 
 bool Sema::LegalSymbolName(std::string const& name)
 {

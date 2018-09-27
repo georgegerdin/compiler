@@ -266,6 +266,7 @@ TEST_CASE("Compiler", "[compiler]") {
                             "}";
             REQUIRE(sematest(snippet));
         }
+
 		SECTION("symbol undefined") {
 			auto snippet = "fn main() -> void {"
 				"  /*let a = 2+3;*/"
