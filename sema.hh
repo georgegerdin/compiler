@@ -188,17 +188,21 @@ Result Sema::Analysis(NumberNode const& nn, SymbolPath) {
 Result Sema::Analysis(ExprNode const& en, SymbolPath path)
 {
 	Result result;
+	boost::optional<SymbolTable::Category> category;
+
 	for (const auto& op : en.operations) {
 		result = Analysis(op, path);
 		if (!result)
 			return result;
-
+		if (!category)
+			category = *result;
+		else if()
 	}
 	return result;
 }
 
 Result Sema::Analysis(AddNode const& an, SymbolPath path) {
-
+	return Analysis(an, path);
 }
 
 Result Sema::Analysis(IdentifierNode const& in, SymbolPath path)
